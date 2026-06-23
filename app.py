@@ -13,10 +13,10 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 
-# ── Ensure Scrapling browsers are installed (needed on Streamlit Cloud) ──
+# ── Ensure Scrapling browsers are installed (Patchright is Scrapling's Playwright fork) ──
 try:
     subprocess.run(
-        [sys.executable, "-m", "scrapling", "install"],
+        [sys.executable, "-m", "patchright", "install", "chromium"],
         capture_output=True, timeout=120,
     )
 except Exception:
