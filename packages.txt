@@ -13,4 +13,6 @@ libxrandr2
 libgbm1
 libasound2
 libxshmfence1
-fonts-liberation
+libcairo2
+libpango-1.0-0
+libgdk-pixbuf2.0-0
