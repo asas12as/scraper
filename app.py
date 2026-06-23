@@ -91,7 +91,9 @@ with st.sidebar:
                 st.session_state.gov_places = places
                 st.session_state.gov_name = gov
             else:
-                st.warning("No places found. Try different categories.")
+                st.error(f"No places found in {gov} for: {', '.join(gov_cats)}. "
+                         "Google may be rate-limiting or the page didn't load properly. "
+                         "Try again in a few minutes.")
 
     if st.session_state.get("gov_places"):
         st.caption(f"Found {len(st.session_state.gov_places)} places in {st.session_state.gov_name}")
@@ -150,6 +152,19 @@ if run and queries:
     status.success(f"Scraped {len(results)} place(s)")
     st.session_state.results = results
     st.session_state.results_ts = time.time()
+
+    # Show any errors
+    errors = [r for r in results if r.get("error")]
+    for r in errors:
+        st.error(f"**{r['query']}**: {r['error']}")
+    if not errors:
+        # Check for empty results (page loaded but no data found)
+        empty = [r for r in results if not r.get("rating") and not r.get("address") and not r.get("name")]
+        if empty:
+            names = ", ".join(r["query"] for r in empty[:3])
+            st.warning(f"No data found for: {names}. "
+                       "Google may have returned a captcha or different page format. "
+                       "Try running locally or use a different network.")
 
 # ── Display results (use cached) ────────────────────────────────────────────
 results = st.session_state.get("results")
