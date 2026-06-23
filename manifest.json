@@ -1,0 +1,17 @@
+{
+  "name": "Egypt Place Aggregator",
+  "short_name": "Places",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0e1117",
+  "theme_color": "#f63366",
+  "description": "Scrape ratings, reviews & addresses for Egyptian places from Google",
+  "categories": ["travel", "food", "utilities"],
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%8D%3C/text%3E%3C/svg%3E",
+      "sizes": "256x256",
+      "type": "image/svg+xml"
+    }
+  ]
+}
