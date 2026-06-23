@@ -54,6 +54,9 @@ GOOGLE_UI_LABELS = frozenset({
     "report a problem", "view larger map", "see on google maps",
     "place details", "more info", "overview", "about",
     "reviews", "photos", "updates", "q&a",
+    # Captcha / privacy-interstitial page text
+    "about this page", "why did this happen", "terms of service",
+    "skip to main content", "please click", "here",
 })
 
 # Substrings that disqualify a name — checked via `in`
@@ -75,6 +78,14 @@ _BAD_SUBSTRINGS = (
     "انقر",             # Arabic "click"
     "footer links",     # Google footer nav label
     "footer",
+    # Captcha / privacy-interstitial page headings
+    "about this page",
+    "why did this happen",
+    "terms of service",
+    "skip to main content",
+    "please click",
+    # Single-word captcha links
+    "captcha",
 )
 
 def is_valid_place_name(text):
@@ -216,20 +227,28 @@ def scrape_place(query: str, location: str | None = None) -> dict:
         )
     except Exception as e:
         result["error"] = f"Page load failed: {e}"
+        # Try Maps for the name even when Search fails
+        result["name"] = _extract_name_from_maps(query, location) or ""
         return result
 
     text = response.get_all_text()
 
-    # Detect captcha/blocked pages
+    # Detect captcha/blocked pages — still try Maps for the name
+    captcha_detected = False
     if not text or len(text.strip()) < 200:
         result["error"] = "Empty or very short response — Google may be blocking the request"
-        return result
-    lower_text = text.lower()
-    if any(p in lower_text for p in ("unusual traffic", "captcha", "please confirm you're not a robot", "our systems have detected unusual traffic")):
+        captcha_detected = True
+    lower_text = text.lower() if text else ""
+    if any(p in lower_text for p in ("unusual traffic", "captcha", "please confirm you're not a robot",
+                                      "our systems have detected unusual traffic")):
         result["error"] = "Google blocked the request (unusual traffic detected). Try a different network or reduce request frequency."
-        return result
+        captcha_detected = True
     if "this page can't be loaded" in lower_text or "google search is temporarily unavailable" in lower_text:
         result["error"] = "Google Search is temporarily unavailable from this IP."
+        captcha_detected = True
+
+    if captcha_detected:
+        result["name"] = _extract_name_from_maps(query, location) or ""
         return result
 
     lines = text.split("\n")
@@ -511,6 +530,14 @@ def search_places_by_governorate(
                 google_search=True,
                 timeout=30000,
             )
+
+            # Check for captcha/blocked page
+            text = resp.get_all_text()
+            lower_text = text.lower() if text else ""
+            if any(p in lower_text for p in ("unusual traffic", "captcha", "please confirm you're not a robot",
+                                              "our systems have detected unusual traffic", "about this page",
+                                              "why did this happen", "terms of service")):
+                continue  # skip this category — blocked
 
             seen = set()
             cat_count = 0
