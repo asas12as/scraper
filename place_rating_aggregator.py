@@ -209,7 +209,7 @@ def scrape_place(query: str, location: str | None = None) -> dict:
             url,
             headless=True,
             network_idle=True,
-            wait=3000,
+            wait=8000,
             locale="en-US",
             google_search=True,
             timeout=30000,
@@ -219,6 +219,19 @@ def scrape_place(query: str, location: str | None = None) -> dict:
         return result
 
     text = response.get_all_text()
+
+    # Detect captcha/blocked pages
+    if not text or len(text.strip()) < 200:
+        result["error"] = "Empty or very short response — Google may be blocking the request"
+        return result
+    lower_text = text.lower()
+    if any(p in lower_text for p in ("unusual traffic", "captcha", "please confirm you're not a robot", "our systems have detected unusual traffic")):
+        result["error"] = "Google blocked the request (unusual traffic detected). Try a different network or reduce request frequency."
+        return result
+    if "this page can't be loaded" in lower_text or "google search is temporarily unavailable" in lower_text:
+        result["error"] = "Google Search is temporarily unavailable from this IP."
+        return result
+
     lines = text.split("\n")
     clean = [l.strip() for l in lines]
 
@@ -474,10 +487,10 @@ def search_places_by_governorate(
     categories: list[str] | None = None,
     max_per_category: int = 5,
 ) -> list[str]:
-    """Search Google Maps for places in a governorate and return formatted lines.
+    """Search Google for places in a governorate and return formatted lines.
 
-    Returns lines like: Name, City
-    Uses StealthyFetcher (same engine as scrape_place) — no persistent session needed.
+    Uses Google Search (same engine as scrape_place) — extracts place names
+    from organic result headings (<h3> elements).
     """
     if categories is None:
         categories = ["restaurants"]
@@ -487,40 +500,61 @@ def search_places_by_governorate(
 
     for cat in categories:
         query = f"{cat} in {city}"
-        url = f"https://www.google.com/maps/search/{query.replace(' ', '+')}/"
+        url = f"https://www.google.com/search?q={query.replace(' ', '+')}&hl=en"
         try:
             resp = StealthyFetcher.fetch(
                 url,
                 headless=True,
                 network_idle=True,
                 wait=5000,
+                locale="en-US",
+                google_search=True,
                 timeout=30000,
             )
 
             seen = set()
             cat_count = 0
-            for article in resp.css('[role="article"]'):
-                aria = article.attrib.get("aria-label", "")
-                if aria:
-                    name = aria.split("·")[0].strip().rstrip(" ·★")
-                    if name and 2 < len(name) < 60 and re.search(r"[A-Za-z\u0600-\u06FF]", name):
-                        key = name.lower().strip()
-                        if key not in seen:
-                            seen.add(key)
-                            results.append(f"{name}, {city}")
-                            cat_count += 1
-                else:
-                    txt = article.get_all_text(strip=True)
-                    first_line = txt.split("\n")[0].strip()
-                    if first_line and 2 < len(first_line) < 60 and re.search(r"[A-Za-z\u0600-\u06FF]", first_line):
-                        key = first_line.lower().strip()
-                        if key not in seen:
-                            seen.add(key)
-                            results.append(f"{first_line}, {city}")
-                            cat_count += 1
-
+            # Extract from organic result headings (h3) — these are place names
+            for h3 in resp.css("h3"):
+                t = h3.text.strip() if h3.text else ""
+                if not t or len(t) < 2 or len(t) > 60:
+                    continue
+                if not re.search(r"[A-Za-z\u0600-\u06FF]", t):
+                    continue
+                if not is_valid_place_name(t):
+                    continue
+                # Skip if it's entirely digits/symbols
+                if re.match(r"^[\d\s()/:;,!?.\-]+$", t):
+                    continue
+                key = t.lower().strip()
+                if key not in seen:
+                    seen.add(key)
+                    results.append(f"{t}, {city}")
+                    cat_count += 1
                 if cat_count >= max_per_category:
                     break
+
+            # If h3 extraction got nothing, try raw text fallback
+            if cat_count == 0:
+                text = resp.get_all_text()
+                for line in text.split("\n"):
+                    line = line.strip()
+                    if not line or len(line) < 3 or len(line) > 60:
+                        continue
+                    if not re.search(r"[A-Za-z\u0600-\u06FF]", line):
+                        continue
+                    lower = line.lower()
+                    # Skip common non-place lines
+                    if any(p in lower for p in ("reviews", "rating", "google", "subscribe", "cookie", ".com", "http")):
+                        continue
+                    if is_valid_place_name(line):
+                        key = line.lower().strip()
+                        if key not in seen:
+                            seen.add(key)
+                            results.append(f"{line}, {city}")
+                            cat_count += 1
+                        if cat_count >= max_per_category:
+                            break
         except Exception:
             pass
 
